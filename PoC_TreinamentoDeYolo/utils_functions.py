@@ -113,6 +113,7 @@ def gerar_arquivo_yolo_label(
     ponto_rotulacao_y_prop,
     tamanho_lado_rotulacao_prop,
     deslocamento_rotulacao_x_prop,
+    qtd_labels=2
 ):
     """
     Gera um arquivo de rótulo YOLO para a imagem capturada com base nas constantes de rotulação.
@@ -133,7 +134,7 @@ def gerar_arquivo_yolo_label(
 
     yolo_labels = []
 
-    for i in range(6):
+    for i in range(qtd_labels):
         # Calcular o centro do objeto em pixels usando proporções e dimensões da imagem atual
         centro_x_obj_pixel = int(
             (ponto_rotulacao_x_prop + i * deslocamento_rotulacao_x_prop) * largura_img
