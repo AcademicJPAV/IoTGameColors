@@ -4,12 +4,13 @@
 
 Este projeto utiliza um modelo de detecção de objetos (YOLOv12) para identificar elementos visuais específicos em um jogo (como *debuffs* de status) em tempo real. Com base nas detecções, ele se comunica com o Home Assistant para controlar dispositivos de IoT, como luzes inteligentes, criando uma experiência de imersão.
 
-O fluxo de trabalho do projeto é dividido em quatro etapas principais:
+O fluxo de trabalho do projeto é dividido em cinco etapas principais:
 
 1.  **Captura de Imagens para Treinamento:** Coleta de imagens da tela do jogo para criar um dataset.
 2.  **Correção de Labels:** Ajuste e correção dos rótulos gerados para o dataset.
-3.  **Treinamento do Modelo:** Uso do dataset para treinar o modelo YOLO.
-4.  **Execução do Modelo:** Execução do modelo treinado para detecção em tempo real e automação.
+3.  **Divisão do Dataset:** Separação das imagens e rótulos em conjuntos de treino, validação e teste.
+4.  **Treinamento do Modelo:** Uso do dataset para treinar o modelo YOLO.
+5.  **Execução do Modelo:** Execução do modelo treinado para detecção em tempo real e automação.
 
 ---
 
@@ -25,7 +26,7 @@ Clone o repositório e instale as dependências necessárias. É recomendado cri
 
 ```bash
 # Clone o repositório (substitua pela URL do seu repo)
-git clone https://github.com/seu-usuario/IoTGameColors.git
+git clone https://github.com/AcademicJPAV/IoTGameColors.git
 cd IoTGameColors
 
 # Crie e ative um ambiente virtual (opcional, mas recomendado)
@@ -33,7 +34,7 @@ python -m venv .venv
 source .venv/bin/activate  # No Windows: .venv\Scripts\activate
 
 # Instale as dependências
-pip install ultralytics opencv-python mss pygetwindow python-dotenv keyboard pyautogui pillow requests
+pip install -r requirements_projeto_inteiro.txt
 ```
 
 ---
@@ -110,17 +111,13 @@ O script irá ler o nome de cada subpasta, extrair a classe (ex: "Pyro"), encont
 
 ---
 
-## Etapa 3: Preparação do Dataset e Treinamento do Modelo YOLO
-
-Esta etapa prepara o dataset coletado e executa o treinamento do modelo de detecção. Ela é composta por dois scripts principais que automatizam o processo.
-
-**Localização:** `Etapa03_TreinamentoDoModelo/`
-
-### 3.1 - Divisão do Dataset (Treino, Validação e Teste)
+## Etapa 3: Divisão do Dataset
 
 Antes de treinar, o dataset precisa ser dividido em conjuntos de treino, validação e teste. O script `separarEmTreinoValETeste.py` automatiza esse processo de forma estratificada, garantindo que a proporção de classes seja semelhante em todos os conjuntos.
 
-#### Configuração
+**Localização:** `Etapa03_TreinamentoDoModelo/`
+
+### Configuração
 
 Abra o arquivo `separarEmTreinoValETeste.py` e ajuste as seguintes constantes:
 
@@ -128,7 +125,7 @@ Abra o arquivo `separarEmTreinoValETeste.py` e ajuste as seguintes constantes:
 -   `OUTPUT_DIR`: Caminho para a pasta onde o dataset dividido (`train/`, `val/`, `test/`) será criado.
 -   `TEST_SPLIT_RATIO` e `VALIDATION_SPLIT_RATIO`: Proporções para dividir os dados.
 
-#### Execução
+### Execução
 
 Execute o script a partir da pasta raiz do projeto:
 
@@ -138,11 +135,11 @@ python Etapa03_TreinamentoDoModelo/separarEmTreinoValETeste.py
 
 Ao final, a pasta definida em `OUTPUT_DIR` conterá a estrutura de pastas pronta para o treinamento.
 
-### 3.2 - Treinamento do Modelo
+## 4 - Treinamento do Modelo
 
 Com o dataset organizado, o script `trainyolov12.py` cuida de todo o processo de treinamento. Ele primeiro cria o arquivo de configuração `.yaml` necessário para o YOLO e, em seguida, inicia o treinamento.
 
-#### Configuração
+### Configuração
 
 No arquivo `trainyolov12.py`, configure os parâmetros de treinamento:
 
@@ -152,7 +149,7 @@ No arquivo `trainyolov12.py`, configure os parâmetros de treinamento:
 -   `EPOCHS`: O número de épocas para o treinamento.
 -   `IMAGE_SIZE`: O tamanho das imagens a serem usadas no treinamento.
 
-#### Execução
+### Execução
 
 Para iniciar o treinamento, execute:
 
@@ -160,11 +157,11 @@ Para iniciar o treinamento, execute:
 python Etapa03_TreinamentoDoModelo/trainyolov12.py
 ```
 
-O script irá criar o arquivo `.yaml`, carregar o modelo e iniciar o treinamento. Os resultados, incluindo o modelo treinado (`best.pt`), serão salvos na pasta `runs/detect/treino_yolov12_iot_colors_resultado`. Este arquivo `best.pt` é o que será usado na Etapa 4.
+O script irá criar o arquivo `.yaml`, carregar o modelo e iniciar o treinamento. Os resultados, incluindo o modelo treinado (`best.pt`), serão salvos na pasta `runs/detect/treino_yolov12_iot_colors_resultado`. Este arquivo `best.pt` é o que será usado na Etapa 5.
 
 ---
 
-## Etapa 4: Execução e Automação
+## Etapa 5: Execução e Automação
 
 Nesta etapa, o modelo treinado é usado para detecção em tempo real. O script principal, `IotGameColorsScript.py`, integra a detecção com o Home Assistant.
 
