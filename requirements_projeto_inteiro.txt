@@ -1,0 +1,11 @@
+pyautogui
+keyboard
+pillow
+opencv-python
+numpy
+scikit-learn
+ultralytics
+mss
+requests
+pygetwindow
+python-dotenv
