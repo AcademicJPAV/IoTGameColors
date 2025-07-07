@@ -6,11 +6,12 @@ Este projeto utiliza um modelo de detecção de objetos (YOLOv12) para identific
 
 O fluxo de trabalho do projeto é dividido em cinco etapas principais:
 
-1.  **Captura de Imagens para Treinamento:** Coleta de imagens da tela do jogo para criar um dataset.
-2.  **Correção de Labels:** Ajuste e correção dos rótulos gerados para o dataset.
-3.  **Divisão do Dataset:** Separação das imagens e rótulos em conjuntos de treino, validação e teste.
-4.  **Treinamento do Modelo:** Uso do dataset para treinar o modelo YOLO.
-5.  **Execução do Modelo:** Execução do modelo treinado para detecção em tempo real e automação.
+1.  [**Captura de Imagens para Treinamento:**](#etapa-1-captura-de-imagens-para-treinamento) Coleta de imagens da tela do jogo para criar um dataset.
+2.  [**Correção de Labels:**](#etapa-2-correção-de-labels) Ajuste e correção dos rótulos gerados para o dataset.
+3. [**Preparação do Dataset e Treinamento:**](#etapa-31-divisão-do-dataset)
+   1.  [**Divisão do Dataset:**](#etapa-31-divisão-do-dataset) Separação das imagens e rótulos em conjuntos de treino, validação e teste.
+   2.  [**Treinamento do Modelo:**](#etapa-32-treinamento-do-modelo) Uso do dataset para treinar o modelo YOLO.
+4.  [**Execução do Modelo:**](#etapa-4-execução-e-automação) Execução do modelo treinado para detecção em tempo real e automação.
 
 ---
 
@@ -43,7 +44,7 @@ pip install -r requirements_projeto_inteiro.txt
 
 Nesta etapa, usamos o script `capturescript.py` para criar o dataset de imagens que será usado para treinar o modelo.
 
-**Localização:** `Etapa01_CapturaDeImagensParaTreino/`
+**Localização:** [`Etapa01_CapturaDeImagensParaTreino/`](Etapa01_CapturaDeImagensParaTreino/)
 
 ### Configuração
 
@@ -80,7 +81,7 @@ O script nomeia os arquivos de forma incremental (ex: `pyro_0001.png`, `pyro_000
 
 Este script (`corrige_labels.py`) é um utilitário para corrigir os IDs de classe nos arquivos de rótulo `.txt` gerados na etapa anterior. Ele é útil se você capturou imagens para várias classes e precisa garantir que cada uma tenha o ID correto.
 
-**Localização:** `Etapa02_Correcao_De_Labels/`
+**Localização:** [`Etapa02_Correcao_De_Labels/`](Etapa02_Correcao_De_Labels/)
 
 ### Estrutura de Pastas Esperada
 
@@ -111,11 +112,11 @@ O script irá ler o nome de cada subpasta, extrair a classe (ex: "Pyro"), encont
 
 ---
 
-## Etapa 3: Divisão do Dataset
+## Etapa 3.1: Divisão do Dataset
 
 Antes de treinar, o dataset precisa ser dividido em conjuntos de treino, validação e teste. O script `separarEmTreinoValETeste.py` automatiza esse processo de forma estratificada, garantindo que a proporção de classes seja semelhante em todos os conjuntos.
 
-**Localização:** `Etapa03_TreinamentoDoModelo/`
+**Localização:** [`Etapa03_TreinamentoDoModelo/`](Etapa03_TreinamentoDoModelo/)
 
 ### Configuração
 
@@ -135,7 +136,12 @@ python Etapa03_TreinamentoDoModelo/separarEmTreinoValETeste.py
 
 Ao final, a pasta definida em `OUTPUT_DIR` conterá a estrutura de pastas pronta para o treinamento.
 
-## 4 - Treinamento do Modelo
+## Etapa 3.2: Treinamento do Modelo
+Nesta etapa, o modelo YOLOv12 é treinado usando o dataset preparado na etapa anterior. O script `trainyolov12.py` cuida de todo o processo de treinamento, incluindo a criação do arquivo de configuração necessário para o YOLO.
+
+**Localização:** [`Etapa03_TreinamentoDoModelo/`](Etapa03_TreinamentoDoModelo/)
+
+### Organização do Dataset
 
 Com o dataset organizado, o script `trainyolov12.py` cuida de todo o processo de treinamento. Ele primeiro cria o arquivo de configuração `.yaml` necessário para o YOLO e, em seguida, inicia o treinamento.
 
@@ -157,15 +163,15 @@ Para iniciar o treinamento, execute:
 python Etapa03_TreinamentoDoModelo/trainyolov12.py
 ```
 
-O script irá criar o arquivo `.yaml`, carregar o modelo e iniciar o treinamento. Os resultados, incluindo o modelo treinado (`best.pt`), serão salvos na pasta `runs/detect/treino_yolov12_iot_colors_resultado`. Este arquivo `best.pt` é o que será usado na Etapa 5.
+O script irá criar o arquivo `.yaml`, carregar o modelo e iniciar o treinamento. Os resultados, incluindo o modelo treinado (`best.pt`), serão salvos na pasta `runs/detect/treino_yolov12_iot_colors_resultado`. Este arquivo `best.pt` é o que será usado na Etapa 4.
 
 ---
 
-## Etapa 5: Execução e Automação
+## Etapa 4: Execução e Automação
 
 Nesta etapa, o modelo treinado é usado para detecção em tempo real. O script principal, `IotGameColorsScript.py`, integra a detecção com o Home Assistant.
 
-**Localização:** `Etapa04_ExecucaoModelo/`
+**Localização:** [`Etapa04_ExecucaoModelo/`](Etapa04_ExecucaoModelo/)
 
 ### Configuração
 
