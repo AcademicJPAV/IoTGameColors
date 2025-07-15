@@ -1,8 +1,6 @@
 .venv
 **/.env
 **/__pycache__
-backups/backupDatasetFinalSemElectro/*
-backups/backupImagensDesorganizadas/*
 Etapa01_CapturaDeImagensParaTreino/dataset/*
 Etapa01_CapturaDeImagensParaTreino/data/*
 Etapa02_Corrrecao_De_Labels/data/*

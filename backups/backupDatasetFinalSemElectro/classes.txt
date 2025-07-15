@@ -1,0 +1,5 @@
+Pyro
+Hydro
+Electro
+Cryo
+Dendro
