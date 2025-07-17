@@ -1,7 +1,6 @@
 import os
 
-DIRETORIO_IMAGENS = "datasetFinalComElectro"
-DIRETORIO_TXTS = "datasetFinalComElectro"
+DIRETORIO = "datasetFinalComElectroComCorrecaoPyro"
 
 count = 1
 MODO_ESCOLHIDO = 1  # Escolha o modo de renomeação: 0 ou 1,
@@ -9,13 +8,13 @@ MODO_ESCOLHIDO = 1  # Escolha o modo de renomeação: 0 ou 1,
 # 1 para renomear fotos e labels separadamente separadas nas pastas images e labels,
 match MODO_ESCOLHIDO:
     case 0:
-        for directory in os.listdir(DIRETORIO_IMAGENS):
-            images_base = os.path.join(DIRETORIO_IMAGENS, directory)
+        for directory in os.listdir(DIRETORIO):
+            images_base = os.path.join(DIRETORIO, directory)
             if os.path.isdir(images_base):
                 for file in os.listdir(images_base):
                     if file.endswith(".png"):
                         old_base = os.path.splitext(file)[0]
-                        new_base = f"imagem_{count}"
+                        new_base = f"img_train_{count}"
                         dir_path = images_base
 
                         # Renomeia o arquivo .png
@@ -34,16 +33,16 @@ match MODO_ESCOLHIDO:
 
                         count += 1
     case 1:
-        images_base = os.path.join(DIRETORIO_IMAGENS, "images")
-        txts_base = os.path.join(DIRETORIO_TXTS, "labels")
+        images_base = os.path.join(DIRETORIO, "images")
+        txts_base = os.path.join(DIRETORIO, "labels")
         fotos = os.listdir(images_base)
         txts = os.listdir(txts_base)
         for foto in fotos:
-            new_name = f"imagem_{count}.png"
+            new_name = f"img_train_{count}.png"
             old_name = os.path.join(images_base, foto)
             new_name_full = os.path.join(images_base, new_name)
 
-            new_txt_name = f"imagem_{count}.txt"
+            new_txt_name = f"img_train_{count}.txt"
             old_txt_name = os.path.join(txts_base, foto.replace(".png", ".txt"))
             new_txt_name_full = os.path.join(txts_base, new_txt_name)
             os.rename(old_name, new_name_full)

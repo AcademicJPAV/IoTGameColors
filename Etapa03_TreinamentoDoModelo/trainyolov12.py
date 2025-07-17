@@ -1,11 +1,10 @@
 import os
 import yaml
 from ultralytics import YOLO
-
 # --- CONFIGURAÇÕES ---
 
 # Caminho para a pasta do dataset final, criada pelo script anterior.
-DATASET_DIR = 'C:/Users/juand/git/pessoal/IoTGameColors/Etapa03_TreinamentoDoModelo/datasetFinal'
+DATASET_DIR = '/content/datasetFinal'
 
 # Nome do arquivo de configuração do dataset que será criado.
 DATA_YAML_NAME = 'iot_colors_dataset.yaml'
@@ -25,15 +24,15 @@ CLASS_NAMES = [
 PRETRAINED_MODEL = 'yolo12n.pt'
 
 # Parâmetros de treinamento.
-EPOCHS = 50      # Número de épocas (ciclos de treinamento completos).
-IMAGE_SIZE = 640  # Tamanho da imagem para o treinamento.
+EPOCHS = 200      # Número de épocas (ciclos de treinamento completos).
+IMAGE_SIZE = 380  # Tamanho da imagem para o treinamento.
 
 # --- FIM DAS CONFIGURAÇÕES ---
 
 
 def create_dataset_yaml(dataset_dir, class_names, yaml_name):
     """Cria o arquivo .yaml de configuração do dataset para o YOLO."""
-    
+
     yaml_path = os.path.join(dataset_dir, yaml_name)
     if os.path.exists(yaml_path):
         print(f"Arquivo de configuração '{yaml_path}' já existe. Usando o existente.")
@@ -44,7 +43,7 @@ def create_dataset_yaml(dataset_dir, class_names, yaml_name):
 
     data = {
         # Usa o caminho absoluto no arquivo de configuração.
-        'path': abs_dataset_dir, 
+        'path': abs_dataset_dir,
         'train': 'train/images',
         'val': 'val/images',  # O YOLO precisa deste caminho, mesmo que a pasta não exista.
         'test': 'test/images', # Opcional, mas bom ter.
@@ -60,27 +59,27 @@ def create_dataset_yaml(dataset_dir, class_names, yaml_name):
 
 def main():
     """Função principal para treinar e testar o modelo."""
-    
+
     # 1. Criar o arquivo de configuração do dataset
     data_yaml_path = create_dataset_yaml(DATASET_DIR, CLASS_NAMES, DATA_YAML_NAME)
-    
+
     # 2. Carregar um modelo YOLOv12 pré-treinado
     print(f"Carregando modelo pré-treinado: {PRETRAINED_MODEL}")
     model = YOLO(PRETRAINED_MODEL)
-    
+
     # 3. Treinar o modelo
     print(f"\nIniciando o treinamento do modelo com base no {PRETRAINED_MODEL}...")
     model.train(
-        data=data_yaml_path, 
-        epochs=EPOCHS, 
-        imgsz=IMAGE_SIZE,
+        data=data_yaml_path,
+        epochs=EPOCHS,
         project='runs/detect',
         name='treino_yolov12_iot_colors_resultado',
-        workers=32,
+        workers=26,
         batch=64,
-        patience=10
+        patience=100,
+        imgsz=IMAGE_SIZE
     )
-    
+
     print("\nTreinamento concluído!")
     print("Verifique a pasta 'runs/detect/treino_yolov12_iot_colors_resultado' para todos os resultados.")
     print("O melhor modelo foi salvo como 'best.pt' dentro dessa pasta.")

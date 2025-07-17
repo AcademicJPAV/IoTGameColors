@@ -6,8 +6,8 @@ from ultralytics import YOLO
 import mss
 
 # --- CONFIGURAÇÕES GLOBAIS ---
-MODEL_PATH = "C:/Users/juand/git/pessoal/IoTGameColors/PoC_ExecucaoModelo/modeloIoTColorsCorrigidoFinal.pt"
-DATA_YAML_PATH = "C:/Users/juand/git/pessoal/IoTGameColors/PoC_TreinamentoDoModelo/datasetFinal/iot_colors_dataset.yaml"
+MODEL_PATH = "./modelo_final_384px_300_epocas.pt"
+DATA_YAML_PATH = "./iot_colors_dataset.yaml"
 # --- FIM DAS CONFIGURAÇÕES ---
 
 
