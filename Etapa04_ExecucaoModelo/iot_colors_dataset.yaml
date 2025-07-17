@@ -1,0 +1,10 @@
+path: C:\Users\juand\git\pessoal\IoTGameColors\Etapa03_TreinamentoDoModelo\datasetFinal
+train: train/images
+val: val/images
+test: test/images
+names:
+  0: Pyro
+  1: Hydro
+  2: Electro
+  3: Cryo
+  4: Dendro

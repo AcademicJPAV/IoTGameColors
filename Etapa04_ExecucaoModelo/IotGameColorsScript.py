@@ -1,6 +1,7 @@
 import os
 import sys
 import getpass
+import threading
 import requests
 import cv2
 import numpy as np
@@ -10,9 +11,15 @@ import pygetwindow as gw
 from dotenv import load_dotenv
 import time
 
+import ultralytics
+import ultralytics.utils
+import ultralytics.utils.metrics
+
 # --- CONFIGURAÇÕES GLOBAIS ---
-MODEL_PATH = "C:/Users/juand/git/pessoal/IoTGameColors/PoC_ExecucaoModelo/modeloIoTColorsCorrigidoFinal.pt"
-DATA_YAML_PATH = "C:/Users/juand/git/pessoal/IoTGameColors/PoC_TreinamentoDoModelo/datasetFinal/iot_colors_dataset.yaml"
+MODEL_PATH = "./modelo_final_384px_300_epocas.pt"
+DATA_YAML_PATH = "./iot_colors_dataset.yaml"
+IMAGE_SIZE = 320
+INTERVALO_DE_CONMFIANCA = 0.8
 
 
 # --- CLASSE DA MÁQUINA DE ESTADOS ---
@@ -31,7 +38,7 @@ class DebuffStateMachine:
         "DENDRO",
     )
 
-    CONFIRMATION_THRESHOLD = 2
+    CONFIRMATION_THRESHOLD = 3
 
     def __init__(
         self,
@@ -52,6 +59,7 @@ class DebuffStateMachine:
         self.current_state = self.STATE_NEUTRO
         self.candidate_state = self.STATE_NEUTRO
         self.detection_counter = 0
+        self.inicio_deteccao = 0
 
         self.states_config = {
             self.STATE_ELECTRO: {
@@ -156,9 +164,7 @@ class DebuffStateMachine:
             return self.STATE_NEUTRO
 
         if found_states := {
-            self.detection_to_state_map[name]
-            for name in detected_classes
-            if name in self.detection_to_state_map
+            self.detection_to_state_map[name] for name in detected_classes
         }:
             return min(
                 found_states, key=lambda state: self.states_config[state]["priority"]
@@ -166,7 +172,36 @@ class DebuffStateMachine:
         else:
             return self.STATE_NEUTRO
 
-    def process_detections(self, detected_classes: set):
+    def _api_call_and_log(
+        self,
+        prev_state: str,
+        new_state: str,
+        timestamp_fim_deteccao: str,
+        timestamp_inicio_deteccao: str,
+    ):
+        """Registra a mudança de estado e chama a API do Home Assistant."""
+        ns = time.thread_time_ns()
+        ms = (ns % 1_000_000_000) // 1_000_000
+        timestamp_envio_api = (
+            f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}.{ms:03d}"
+        )
+        self._make_api_call(new_state)
+        ns = time.thread_time_ns()
+        ms = (ns % 1_000_000_000) // 1_000_000
+        timestamp_response_api = (
+            f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}.{ms:03d}"
+        )
+
+        mensagem_fim_da_deteccao = (
+            f"[Estado] Deteccao Realizada com Sucesso: MUDANÇA CONFIRMADA: De '{prev_state}' para '{new_state}'\n"
+            f"Inicio da Deteccao: {timestamp_inicio_deteccao} | Fim da Deteccao: {timestamp_fim_deteccao}\n"
+            f"Inicio do Envio da API: {timestamp_envio_api} | Fim do Envio da API: {timestamp_response_api}"
+        )
+        print(mensagem_fim_da_deteccao)
+
+    def process_detections(
+        self, detected_classes: set, tempo_inicio_predicao: str = "0"
+    ) -> None:
         potential_state = self._determine_potential_state(detected_classes)
 
         if potential_state == self.candidate_state:
@@ -177,27 +212,41 @@ class DebuffStateMachine:
             )
             self.candidate_state = potential_state
             self.detection_counter = 1
+            self.inicio_deteccao = tempo_inicio_predicao
 
         if (
             self.detection_counter >= self.CONFIRMATION_THRESHOLD
             and self.candidate_state != self.current_state
         ):
-            print(
-                f"[Estado] MUDANÇA CONFIRMADA: De '{self.current_state}' para '{self.candidate_state}'"
+            # Chama a função assíncrona para enviar a requisição à API e registrar logs
+            ns = time.thread_time_ns()
+            ms = (ns % 1_000_000_000) // 1_000_000
+            timestamp_fim_deteccao = (
+                f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}.{ms:03d}"
             )
+
+            thread = threading.Thread(
+                target=self._api_call_and_log,
+                args=(
+                    self.current_state,
+                    self.candidate_state,
+                    timestamp_fim_deteccao,
+                    tempo_inicio_predicao,
+                ),
+                daemon=True,
+            )
+            thread.start()
             self.current_state = self.candidate_state
-            self._make_api_call(self.current_state)
             self.detection_counter = 0
+            self.inicio_deteccao = 0  # Resetando o início da detecção
 
 
 # --- FUNÇÕES DE SETUP, AVALIAÇÃO E OPERAÇÃO ---
-def setup_interactive():  # sourcery skip: low-code-quality
-    """Guia o usuário pela configuração completa, com fallback para .env."""
-    print("--- Configuração do Home Assistant ---")
+def get_ha_credentials():
+    """Obtém as credenciais do Home Assistant do .env ou via input."""
     load_dotenv()
     ha_url = os.getenv("HOME_ASSISTANT_URL")
     ha_token = os.getenv("HOME_ASSISTANT_TOKEN")
-
     if ha_url and ha_token:
         print("[Configuração] Arquivo .env encontrado. Usando credenciais salvas.")
     else:
@@ -206,124 +255,137 @@ def setup_interactive():  # sourcery skip: low-code-quality
             "Digite o URL do seu Home Assistant (ex: http://homeassistant.local:8123): "
         )
         ha_token = getpass.getpass("Digite seu Token de Acesso de Longa Duração: ")
+    return ha_url, ha_token
 
-    if not ha_url or not ha_token:
-        print("URL e Token são obrigatórios.")
-        return None
 
+def fetch_areas_and_entities(ha_url, ha_token):
+    """Busca áreas e entidades de luz do Home Assistant."""
     headers = {
         "Authorization": f"Bearer {ha_token}",
         "Content-Type": "application/json",
     }
     template_body = {
-        "template": '{ "areas": [ {% set comma = namespace(needed=false) %}{% for area in areas() %}{% set lights = area_entities(area) | select(\'search\', \'^light\\.\') | list %}{% if lights %}{% if comma.needed %},{% endif %}{ "area_name": "{{ area_name(area) }}", "area_id": "{{ area }}", "lights": [ {% for light in lights %}{ "entity_id": "{{ light }}"}{% if not loop.last %},{% endif %}{% endfor %} ] }{% set comma.needed = true %}{% endif %}{% endfor %} ] }'
+        "template": '{ "areas": [ {% set comma = namespace(needed=false) %}{% for area in areas() %}{% set lights = area_entities(area) | select(\'search\', \'^light\\.\') | list %}{% if lights %}{% if comma.needed %},{% endif %}{ "area_name": "{{ area_name(area) }}", "area_id": "{{ area }}", "lights": [ {% for light in lights %}{ "entity_id": "{{ light }}", "state": "{{ states(light) }}", "friendly_name": "{{ state_attr(light, \'friendly_name\') }}" }{{ "," if not loop.last }}{% endfor %} ] }{% set comma.needed = true %}{% endif %}{% endfor %} ] }'
     }
+    print("\nBuscando dispositivos no Home Assistant...")
+    response_areas = requests.post(
+        f"{ha_url}/api/template", headers=headers, json=template_body, timeout=10
+    )
+    response_areas.raise_for_status()
+    areas_data = response_areas.json().get("areas", [])
+
+    response_states = requests.get(f"{ha_url}/api/states", headers=headers, timeout=10)
+    response_states.raise_for_status()
+    all_entities = response_states.json()
+    return areas_data, all_entities
+
+
+def build_selectable_targets(areas_data, all_entities):
+    """Monta a lista de áreas e luzes individuais selecionáveis."""
+    selectable_targets, lights_in_areas = [], set()
+    for area in areas_data:
+        if area["lights"]:
+            selectable_targets.append(
+                {
+                    "display": f"Área: {area['area_name']}",
+                    "id": area["area_id"],
+                    "type": "area",
+                    "ref_light": area["lights"][0]["entity_id"],
+                }
+            )
+            for light in area["lights"]:
+                lights_in_areas.add(light["entity_id"])
+
+    standalone_lights = [e for e in all_entities if e["entity_id"].startswith("light.")]
+    selectable_targets.extend(
+        {
+            "display": f"Luz: {light['attributes'].get('friendly_name', light['entity_id'])}",
+            "id": light["entity_id"],
+            "type": "entity",
+            "ref_light": light["entity_id"],
+        }
+        for light in standalone_lights
+    )
+    return selectable_targets
+
+
+def choose_target(selectable_targets):
+    """Permite ao usuário escolher o alvo de controle."""
+    print("\n--- Alvos Encontrados (Áreas e Luzes Individuais) ---")
+    for i, target in enumerate(selectable_targets, 1):
+        print(f"{i}: {target['display']}")
+
+    selected_target = None
+    while not selected_target:
+        try:
+            choice = int(input("Escolha o NÚMERO do alvo que você quer controlar: "))
+            if 1 <= choice <= len(selectable_targets):
+                selected_target = selectable_targets[choice - 1]
+            else:
+                print("Escolha inválida.")
+        except ValueError:
+            print("Entrada inválida. Digite um número.")
+    return selected_target
+
+
+def get_neutral_action(ha_url, ha_token, selected_target):
+    """Define a ação para o estado neutro."""
+    print("\n--- Definir Ação para o Estado Neutro ---")
+    print("1. Voltar ao estado atual da lâmpada (Recomendado)\n2. Desligar a lâmpada")
+
+    neutral_action = None
+    while not neutral_action:
+        choice_neutral = input("Escolha a ação para o estado Neutro (1-2): ")
+        if choice_neutral == "2":
+            neutral_action = {"service": "turn_off"}
+        elif choice_neutral == "1":
+            ref_light_id = selected_target["ref_light"]
+            print(f"Buscando estado atual da lâmpada de referência ({ref_light_id})...")
+            headers = {
+                "Authorization": f"Bearer {ha_token}",
+                "Content-Type": "application/json",
+            }
+            response_light = requests.get(
+                f"{ha_url}/api/states/{ref_light_id}", headers=headers, timeout=10
+            )
+            response_light.raise_for_status()
+            light_state = response_light.json()
+
+            if light_state["state"] == "off":
+                neutral_action = {"service": "turn_off"}
+            else:
+                attrs = light_state["attributes"]
+                neutral_action = {"service": "turn_on"}
+                if attrs.get("color_mode") == "hs" and "hs_color" in attrs:
+                    neutral_action["hs_color"] = attrs["hs_color"]
+                elif attrs.get("color_mode") == "color_temp" and "color_temp" in attrs:
+                    neutral_action["color_temp"] = attrs["color_temp"]
+                else:
+                    neutral_action["rgb_color"] = [255, 251, 230]  # type: ignore
+                if "brightness" in attrs:
+                    neutral_action["brightness"] = attrs["brightness"]
+        else:
+            print("Opção inválida.")
+    print(f"Estado Neutro definido como: {neutral_action}")
+    return neutral_action
+
+
+def setup_interactive():
+    """Guia o usuário pela configuração completa, com fallback para .env."""
+    print("--- Configuração do Home Assistant ---")
+    ha_url, ha_token = get_ha_credentials()
+    if not ha_url or not ha_token:
+        print("URL e Token são obrigatórios.")
+        return None
 
     try:
-        print("\nBuscando dispositivos no Home Assistant...")
-        response_areas = requests.post(
-            f"{ha_url}/api/template", headers=headers, json=template_body, timeout=10
-        )
-        response_areas.raise_for_status()
-        areas_data = response_areas.json().get("areas", [])
-
-        response_states = requests.get(
-            f"{ha_url}/api/states", headers=headers, timeout=10
-        )
-        response_states.raise_for_status()
-        all_entities = response_states.json()
-
-        selectable_targets, lights_in_areas = [], set()
-        for area in areas_data:
-            if area["lights"]:
-                selectable_targets.append(
-                    {
-                        "display": f"Área: {area['area_name']}",
-                        "id": area["area_id"],
-                        "type": "area",
-                        "ref_light": area["lights"][0]["entity_id"],
-                    }
-                )
-                for light in area["lights"]:
-                    lights_in_areas.add(light["entity_id"])
-
-        standalone_lights = [
-            e
-            for e in all_entities
-            if e["entity_id"].startswith("light.")
-            and e["entity_id"] not in lights_in_areas
-        ]
-        selectable_targets.extend(
-            {
-                "display": f"Luz: {light['attributes'].get('friendly_name', light['entity_id'])}",
-                "id": light["entity_id"],
-                "type": "entity",
-                "ref_light": light["entity_id"],
-            }
-            for light in standalone_lights
-        )
+        areas_data, all_entities = fetch_areas_and_entities(ha_url, ha_token)
+        selectable_targets = build_selectable_targets(areas_data, all_entities)
         if not selectable_targets:
             print("Nenhum alvo de luz encontrado.")
             return None
-
-        print("\n--- Alvos Encontrados (Áreas e Luzes Individuais) ---")
-        for i, target in enumerate(selectable_targets, 1):
-            print(f"{i}: {target['display']}")
-
-        selected_target = None
-        while not selected_target:
-            try:
-                choice = int(
-                    input("Escolha o NÚMERO do alvo que você quer controlar: ")
-                )
-                if 1 <= choice <= len(selectable_targets):
-                    selected_target = selectable_targets[choice - 1]
-                else:
-                    print("Escolha inválida.")
-            except ValueError:
-                print("Entrada inválida. Digite um número.")
-
-        print("\n--- Definir Ação para o Estado Neutro ---")
-        print(
-            "1. Voltar ao estado atual da lâmpada (Recomendado)\n2. Desligar a lâmpada"
-        )
-
-        neutral_action = None
-        while not neutral_action:
-            choice_neutral = input("Escolha a ação para o estado Neutro (1-2): ")
-            if choice_neutral == "2":
-                neutral_action = {"service": "turn_off"}
-            elif choice_neutral == "1":
-                ref_light_id = selected_target["ref_light"]
-                print(
-                    f"Buscando estado atual da lâmpada de referência ({ref_light_id})..."
-                )
-                response_light = requests.get(
-                    f"{ha_url}/api/states/{ref_light_id}", headers=headers, timeout=10
-                )
-                response_light.raise_for_status()
-                light_state = response_light.json()
-
-                if light_state["state"] == "off":
-                    neutral_action = {"service": "turn_off"}
-                else:
-                    attrs = light_state["attributes"]
-                    neutral_action = {"service": "turn_on"}
-                    if attrs.get("color_mode") == "hs" and "hs_color" in attrs:
-                        neutral_action["hs_color"] = attrs["hs_color"]
-                    elif (
-                        attrs.get("color_mode") == "color_temp"
-                        and "color_temp" in attrs
-                    ):
-                        neutral_action["color_temp"] = attrs["color_temp"]
-                    else:
-                        neutral_action["rgb_color"] = [255, 251, 230]  # type: ignore
-                    if "brightness" in attrs:
-                        neutral_action["brightness"] = attrs["brightness"]
-            else:
-                print("Opção inválida.")
-
-        print(f"Estado Neutro definido como: {neutral_action}")
+        selected_target = choose_target(selectable_targets)
+        neutral_action = get_neutral_action(ha_url, ha_token, selected_target)
         return {
             "url": ha_url,
             "token": ha_token,
@@ -345,7 +407,9 @@ def avaliar_modelo(model: YOLO):
         if not os.path.exists(DATA_YAML_PATH):
             print(f"ERRO: Arquivo de dados '{DATA_YAML_PATH}' não encontrado.")
             return
-        metrics = model.val(data=DATA_YAML_PATH, split="test", verbose=False)
+        metrics: ultralytics.utils.metrics.DetMetrics = model.val(
+            data=DATA_YAML_PATH, split="test", verbose=False
+        )
         print("\n--- Métricas de Performance no Conjunto de Teste ---")
         print(
             f"  - mAP50-95 (principal): {metrics.box.map:.4f}, mAP50 (popular): {metrics.box.map50:.4f}"
@@ -353,6 +417,16 @@ def avaliar_modelo(model: YOLO):
         print(
             f"  - Precisão (Precision): {metrics.box.p[0]:.4f}, Recall (Recall): {metrics.box.r[0]:.4f}"
         )
+
+        # Adicionando precisão e recall por classe
+        print("\n--- Precisão e Recall por Classe ---")
+        for class_id, class_name in metrics.names.items():
+            precision = metrics.box.p[class_id]
+            recall = metrics.box.r[class_id]
+            print(
+                f"  Classe '{class_name}': Precisão = {precision:.4f}, Recall = {recall:.4f}"
+            )
+
     except Exception as e:
         print(f"ERRO: Falha ao avaliar o modelo.\nDetalhe: {e}")
 
@@ -480,20 +554,26 @@ def run_detection_loop(
             while True:
                 img_mss = sct.grab(capture_region)
                 frame_bgr = cv2.cvtColor(np.array(img_mss), cv2.COLOR_BGRA2BGR)
-
+                ns = time.thread_time_ns()
+                ms = (ns % 1_000_000_000) // 1_000_000
+                tempo_inicial_predicao = (
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}.{ms:03d}"
+                )
                 results = model.predict(
                     frame_bgr,
                     conf=confidence_threshold,
                     verbose=False,
                     half=False,
-                    imgsz=768,
+                    imgsz=IMAGE_SIZE,
                 )
 
                 detected_classes = {
                     model.names[int(box.cls[0].item())]
                     for box in results[0].boxes  # type: ignore
                 }
-                state_machine.process_detections(detected_classes)
+                state_machine.process_detections(
+                    detected_classes, tempo_inicial_predicao
+                )
 
                 if debug_mode:
                     annotated_frame = results[0].plot()
@@ -579,7 +659,7 @@ def iniciar_deteccao_com_luz(model: YOLO, state_machine: DebuffStateMachine):
             else:
                 print("Opção inválida. Digite um número de 1 a 4.")
 
-    confidence_threshold = 0.9
+    confidence_threshold = INTERVALO_DE_CONMFIANCA
 
     # Chama a função de loop com todas as configurações
     run_detection_loop(
@@ -592,7 +672,7 @@ def iniciar_deteccao_com_luz(model: YOLO, state_machine: DebuffStateMachine):
     )
 
 
-def main_menu(model, state_machine):
+def main_menu(model):
     """Exibe o menu principal e gerencia a escolha do usuário."""
     while True:
         print("""\n=============== MENU PRINCIPAL ================
@@ -604,14 +684,36 @@ def main_menu(model, state_machine):
         if escolha == "1":
             avaliar_modelo(model)
         elif escolha == "2":
-            iniciar_deteccao_com_luz(model, state_machine)
+            iniciar_deteccao(model)
         elif escolha == "3":
-            print("Desligando/Restaurando a lâmpada e saindo...")
-            state_machine.process_detections(set())
+            print("Saindo do programa...")
             sys.exit(0)
         else:
             print("Opção inválida.")
         input("\nPressione Enter para continuar...")
+
+
+def iniciar_deteccao(model):
+    """Orquestra a configuração de dispositivos e inicia o loop de detecção."""
+    print("--- Configuração do Home Assistant ---")
+    config = setup_interactive()
+    if not config:
+        print("Configuração inválida ou cancelada.")
+        return
+
+    print("\nConfiguração concluída com sucesso. Carregando recursos...")
+    try:
+        fsm = DebuffStateMachine(
+            ha_url=config["url"],
+            ha_token=config["token"],
+            target_id=config["target_id"],
+            target_type=config["target_type"],
+            neutral_action=config["neutral_action"],
+        )
+        iniciar_deteccao_com_luz(model, fsm)
+    except Exception as e:
+        print(f"\nERRO ao inicializar a detecção: {e}")
+        input("Pressione Enter para sair.")
 
 
 if __name__ == "__main__":
@@ -622,23 +724,10 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    if config := setup_interactive():
-        print("\nConfiguração concluída com sucesso. Carregando recursos...")
-        try:
-            yolo_model = YOLO(MODEL_PATH)
-            print(f"Modelo YOLO '{MODEL_PATH}' carregado.")
-            fsm = DebuffStateMachine(
-                ha_url=config["url"],
-                ha_token=config["token"],
-                target_id=config["target_id"],
-                target_type=config["target_type"],
-                neutral_action=config["neutral_action"],
-            )
-            main_menu(yolo_model, fsm)
-        except Exception as e:
-            print(f"\nERRO FATAL ao inicializar o programa: {e}")
-            input("Pressione Enter para sair.")
-    else:
-        print("\nSetup não foi concluído. Saindo do programa.")
-
-    sys.exit(0)
+    try:
+        yolo_model = YOLO(MODEL_PATH)
+        print(f"Modelo YOLO '{MODEL_PATH}' carregado.")
+        main_menu(yolo_model)
+    except Exception as e:
+        print(f"\nERRO FATAL ao inicializar o programa: {e}")
+        input("Pressione Enter para sair.")

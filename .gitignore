@@ -1,4 +1,5 @@
 .venv
+.vscode
 **/.env
 **/__pycache__
 Etapa01_CapturaDeImagensParaTreino/dataset/*
@@ -6,3 +7,6 @@ Etapa01_CapturaDeImagensParaTreino/data/*
 Etapa02_Corrrecao_De_Labels/data/*
 Etapa03_TreinamentoDoModelo/*/
 Etapa03_TreinamentoDoModelo/yolo*
+Etapa04_ExecucaoModelo/runs/*
+resposta_uma_lampada.json
+resposta.json
